@@ -28,6 +28,7 @@ from OEA.agent.tools.scene_graph import SceneGraphQueryTool
 from OEA.agent.tools.shell import ExecTool
 from OEA.agent.tools.semantic_navigation import SemanticNavigationTool
 from OEA.agent.tools.spawn import SpawnTool
+from OEA.agent.tools.target_navigation import TargetNavigationTool
 from OEA.agent.tools.web import WebFetchTool, WebSearchTool
 from OEA.bus.events import InboundMessage, OutboundMessage
 from OEA.bus.queue import MessageBus
@@ -156,6 +157,11 @@ class AgentLoop:
         self.tools.register(action_tool)
         self.tools.register(SceneGraphQueryTool(workspace=self.workspace))
         self.tools.register(SemanticNavigationTool(
+            workspace=self.workspace,
+            action_tool=action_tool,
+            registry=self.embodiment_registry,
+        ))
+        self.tools.register(TargetNavigationTool(
             workspace=self.workspace,
             action_tool=action_tool,
             registry=self.embodiment_registry,

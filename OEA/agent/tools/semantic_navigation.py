@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from OEA.agent.tools.base import Tool
 from OEA.agent.tools.embodied import EmbodiedActionTool
-from OEA.embodiment_registry import EmbodimentRegistry
 from hal.simulation.scene_io import load_environment_doc
+
+if TYPE_CHECKING:
+    from OEA.embodiment_registry import EmbodimentRegistry
 
 
 class SemanticNavigationTool(Tool):
