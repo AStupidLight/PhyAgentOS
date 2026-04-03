@@ -56,7 +56,7 @@ PhyAgentOS utilizes a **"State-as-a-File"** protocol matrix, natively supporting
 </div>
 
 ## Long Demo    
-<video src="[https://your-server.com/path-to-your-long-video.mp4](https://youtu.be/LtUWamZRyhM?si=UjKNdqFnO1knfWbX)" width="100%" controls="controls"></video>
+[![Watch the video](https://img.youtube.com/vi/LtUWamZRyhM/maxresdefault.jpg)](https://youtu.be/LtUWamZRyhM?si=UjKNdqFnO1knfWbX)
 
 ## 🏗️ Architecture
 
