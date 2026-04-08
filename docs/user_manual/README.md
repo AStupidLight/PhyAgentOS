@@ -41,6 +41,8 @@
 | [PLUGIN_DEVELOPMENT_GUIDE_zh.md](../user_development_guide/PLUGIN_DEVELOPMENT_GUIDE_zh.md) | 外部插件开发模板（中文） | 想按模板开发独立插件仓库时 |
 | [PLUGIN_DEVELOPMENT_GUIDE.md](../user_development_guide/PLUGIN_DEVELOPMENT_GUIDE.md) | 外部插件开发模板（英文） | 需要英文材料或对外发布时 |
 | [GO2_REAL_HARDWARE_zh.md](./GO2_REAL_HARDWARE_zh.md) | Go2 真机双环境启动、Watchdog/Agent 命令与当前可用原语 | 准备在真实 Go2 上做实验时 |
+| [G1_REAL_HARDWARE_zh.md](./G1_REAL_HARDWARE_zh.md) | G1 真机双环境启动、Watchdog/Agent 命令与当前可用原语 | 准备在真实 G1 上做实验时 |
+| [G1_QUICKSTART_zh.md](./G1_QUICKSTART_zh.md) | G1 一页式启动教程，直接给出配置、Watchdog、Agent 和第一组测试命令 | 想最快把真实 G1 跑起来时 |
 | [plans/Report.md](../plans/Report.md) | 项目规划与报告类文档 | 想了解后续方向时 |
 | [changelog/v0.0.5.md](../changelog/v0.0.5.md) | 历史变更记录参考 | 想了解某阶段设计演进时 |
 
