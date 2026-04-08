@@ -6,8 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
-from OEA.agent.tools.embodied import EmbodiedActionTool
-from OEA.agent.tools.target_navigation import TargetNavigationTool
+from PhyAgentOS.agent.tools.embodied import EmbodiedActionTool
+from PhyAgentOS.agent.tools.target_navigation import TargetNavigationTool
 from hal.hal_watchdog import _poll_once
 from hal.drivers import load_driver
 from hal.simulation.scene_io import load_environment_doc, save_environment_doc

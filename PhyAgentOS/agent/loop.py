@@ -23,6 +23,7 @@ from PhyAgentOS.agent.tools.image import ImageTool
 from PhyAgentOS.agent.tools.embodied import EmbodiedActionTool
 from PhyAgentOS.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from PhyAgentOS.agent.tools.message import MessageTool
+from PhyAgentOS.agent.tools.primitive_motion import PrimitiveMotionTool
 from PhyAgentOS.agent.tools.registry import ToolRegistry
 from PhyAgentOS.agent.tools.scene_graph import SceneGraphQueryTool
 from PhyAgentOS.agent.tools.shell import ExecTool
@@ -35,6 +36,7 @@ from PhyAgentOS.bus.queue import MessageBus
 from PhyAgentOS.providers.base import LLMProvider
 from PhyAgentOS.providers.providers_manager import ProvidersManager
 from PhyAgentOS.session.manager import Session, SessionManager
+from hal.simulation.scene_io import load_environment_doc
 
 if TYPE_CHECKING:
     from PhyAgentOS.config.schema import ChannelsConfig, ExecToolConfig
@@ -166,6 +168,11 @@ class AgentLoop:
             action_tool=action_tool,
             registry=self.embodiment_registry,
         ))
+        self.tools.register(PrimitiveMotionTool(
+            workspace=self.workspace,
+            action_tool=action_tool,
+            registry=self.embodiment_registry,
+        ))
 
     async def _connect_mcp(self) -> None:
         """Connect to configured MCP servers (one-time, lazy)."""
@@ -213,6 +220,63 @@ class AgentLoop:
                 return tc.name
             return f'{tc.name}("{val[:40]}…")' if len(val) > 40 else f'{tc.name}("{val}")'
         return ", ".join(_fmt(tc) for tc in tool_calls)
+
+    @staticmethod
+    def _is_perception_query(text: str) -> bool:
+        normalized = " ".join(text.strip().lower().split())
+        patterns = (
+            r"\bwhat can you see\b",
+            r"\bwhat do you see\b",
+            r"\bwhat is in the environment\b",
+            r"\bwhat objects do you see\b",
+            r"你能看到什么",
+            r"现在能看到什么",
+            r"你看到了什么",
+            r"当前环境里有什么",
+            r"现在环境里有什么",
+            r"环境里有什么",
+            r"附近有什么",
+        )
+        return any(re.search(pattern, normalized) for pattern in patterns)
+
+    def _answer_perception_query(self) -> str | None:
+        env = load_environment_doc(self.workspace / "ENVIRONMENT.md")
+        if not isinstance(env, dict):
+            return None
+
+        nodes = (((env.get("scene_graph") or {}).get("nodes")) or [])
+        objects = env.get("objects") or {}
+
+        if nodes:
+            parts = []
+            for node in nodes[:5]:
+                label = node.get("class") or node.get("object_key") or node.get("id") or "unknown"
+                center = node.get("center") or {}
+                if all(axis in center for axis in ("x", "y", "z")):
+                    parts.append(
+                        f"{label} at approximately ({center['x']}, {center['y']}, {center['z']})"
+                    )
+                else:
+                    parts.append(str(label))
+            if len(nodes) == 1:
+                return f"I currently see {parts[0]}."
+            return "I currently see " + "; ".join(parts) + "."
+
+        if isinstance(objects, dict) and objects:
+            parts = []
+            for name, payload in list(objects.items())[:5]:
+                position = (payload or {}).get("position") or {}
+                if all(axis in position for axis in ("x", "y", "z")):
+                    parts.append(
+                        f"{name} at approximately ({position['x']}, {position['y']}, {position['z']})"
+                    )
+                else:
+                    parts.append(str(name))
+            if len(parts) == 1:
+                return f"I currently see {parts[0]}."
+            return "I currently see " + "; ".join(parts) + "."
+
+        return "The current environment snapshot does not list any visible objects."
 
     async def _run_agent_loop(
         self,
@@ -439,6 +503,15 @@ class AgentLoop:
             return OutboundMessage(
                 channel=msg.channel, chat_id=msg.chat_id, content="\n".join(lines),
             )
+        if self._is_perception_query(msg.content):
+            direct_answer = self._answer_perception_query()
+            if direct_answer:
+                return OutboundMessage(
+                    channel=msg.channel,
+                    chat_id=msg.chat_id,
+                    content=direct_answer,
+                    metadata=msg.metadata or {},
+                )
         await self.memory_consolidator.maybe_consolidate_by_tokens(session)
 
         self._set_tool_context(msg.channel, msg.chat_id, msg.metadata.get("message_id"))

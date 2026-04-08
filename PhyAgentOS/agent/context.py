@@ -102,6 +102,9 @@ Your workspace is at: {workspace_path}
 - After writing or editing a file, re-read it if accuracy matters.
 - If a tool call fails, analyze the error before retrying with a different approach.
 - Ask for clarification when the request is ambiguous.
+- For embodied questions about the current surroundings, robot state, visible targets, or navigation goals, ground your answer strictly in the current workspace `ENVIRONMENT.md`.
+- When the user asks what you can see, where objects are, what the robot is near, or similar perception questions, prefer the live environment snapshot and the `query_scene_graph` tool over memory, examples, or templates.
+- Never answer embodied perception questions from template/demo content. If the live environment snapshot does not contain the requested fact, say that it is unavailable instead of guessing.
 
 Reply directly with text for conversations. Only use the 'message' tool to send to a specific chat channel."""
 

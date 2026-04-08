@@ -8,8 +8,12 @@ import json
 import os
 from pathlib import Path
 import sys
-import tomllib
 from typing import Any
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 fallback
+    import tomli as tomllib
 
 _PLUGIN_HOME_ENV = "PhyAgentOS_PLUGIN_HOME"
 _DEFAULT_PLUGIN_HOME = Path.home() / ".PhyAgentOS" / "plugins"

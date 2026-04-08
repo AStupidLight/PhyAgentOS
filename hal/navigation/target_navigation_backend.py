@@ -3,23 +3,35 @@
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
+import math
 from pathlib import Path
+import time
 from typing import Any
 
 
 def _ensure_navigation_sdk_importable() -> None:
     import sys
 
-    sdk_root = Path(__file__).resolve().parents[3] / "navigation_sdk"
-    if sdk_root.exists():
-        sdk_root_str = str(sdk_root)
-        if sdk_root_str not in sys.path:
-            sys.path.insert(0, sdk_root_str)
+    candidates = [
+        Path(__file__).resolve().parents[2] / "navigation_sdk",
+        Path(__file__).resolve().parents[3] / "navigation_sdk",
+    ]
+    for sdk_root in candidates:
+        if sdk_root.exists():
+            sdk_root_str = str(sdk_root)
+            if sdk_root_str not in sys.path:
+                sys.path.insert(0, sdk_root_str)
+            return
 
 
 def _import_navigation_sdk() -> dict[str, Any]:
     _ensure_navigation_sdk_importable()
-    from navigation_mcp.bridge import Go2BridgeConfig, Go2MoveBridge, SimulatedRobotBridge
+    from navigation_mcp.bridge import (
+        Go2BridgeConfig,
+        Go2MoveBridge,
+        SimulatedRobotBridge,
+        UnitreeMujocoBridge,
+    )
     from navigation_mcp.models import NavPhase, NavigationConfig, Observation
     from navigation_mcp.navigator import NavigationEngine
 
@@ -27,6 +39,7 @@ def _import_navigation_sdk() -> dict[str, Any]:
         "Go2BridgeConfig": Go2BridgeConfig,
         "Go2MoveBridge": Go2MoveBridge,
         "SimulatedRobotBridge": SimulatedRobotBridge,
+        "UnitreeMujocoBridge": UnitreeMujocoBridge,
         "NavPhase": NavPhase,
         "NavigationConfig": NavigationConfig,
         "NavigationEngine": NavigationEngine,
@@ -53,6 +66,9 @@ class TargetNavigationBackend:
         if self.backend_mode == "real":
             cfg = sdk["Go2BridgeConfig"](**self._bridge_config_kwargs())
             self._bridge = sdk["Go2MoveBridge"](cfg)
+        elif self.backend_mode == "mujoco":
+            cfg = sdk["Go2BridgeConfig"](**self._bridge_config_kwargs())
+            self._bridge = sdk["UnitreeMujocoBridge"](cfg)
         else:
             self._bridge = sdk["SimulatedRobotBridge"]()
         self._engine = sdk["NavigationEngine"](self._bridge)
@@ -87,7 +103,7 @@ class TargetNavigationBackend:
     def health_check(self) -> dict[str, Any]:
         if not self._connected:
             return {"connected": False, "status": "disconnected"}
-        if self.backend_mode == "real" and self._bridge is not None:
+        if self.backend_mode in {"real", "mujoco"} and self._bridge is not None:
             describe = getattr(self._bridge, "describe", None)
             if callable(describe):
                 snapshot = describe()
@@ -130,9 +146,83 @@ class TargetNavigationBackend:
 
     def stop(self) -> dict[str, Any]:
         if not self._connected or self._engine is None:
+            if self._bridge is not None:
+                stop = getattr(self._bridge, "stop", None)
+                if callable(stop):
+                    stop()
             self._last_status = {"phase": "cancelled", "message": "navigation cancelled"}
             return self._last_status
+        if self._bridge is not None:
+            stop = getattr(self._bridge, "stop", None)
+            if callable(stop):
+                stop()
         self._last_status = self._engine.cancel()
+        return self._last_status
+
+    def run_motion_primitive(self, params: dict[str, Any]) -> dict[str, Any]:
+        self.connect()
+        if self._bridge is None:
+            raise RuntimeError("motion bridge is unavailable")
+
+        move = getattr(self._bridge, "move", None)
+        stop = getattr(self._bridge, "stop", None)
+        if not callable(move) or not callable(stop):
+            raise RuntimeError("motion bridge does not support primitive movement")
+
+        primitive = str(params.get("primitive", "")).strip().lower()
+        if not primitive:
+            raise ValueError("primitive is required")
+
+        speed_scale = float(params.get("speed_scale", 1.0) or 1.0)
+        speed_scale = min(2.0, max(0.1, speed_scale))
+        dt_s = max(0.05, float(self.config.get("command_dt_s", 0.5) or 0.5))
+        forward_speed = max(0.05, abs(float(self.config.get("forward_speed_x", 0.4) or 0.4))) * speed_scale
+        turn_speed = max(0.05, abs(float(self.config.get("turn_speed_z", 0.6) or 0.6))) * speed_scale
+
+        vx = 0.0
+        vy = 0.0
+        vyaw = 0.0
+        duration_s = params.get("duration_s")
+
+        if primitive == "forward":
+            distance_m = abs(float(params.get("distance_m", 0.5) or 0.5))
+            vx = forward_speed
+            duration_s = float(duration_s) if duration_s is not None else distance_m / forward_speed
+        elif primitive == "backward":
+            distance_m = abs(float(params.get("distance_m", 0.3) or 0.3))
+            vx = -forward_speed
+            duration_s = float(duration_s) if duration_s is not None else distance_m / forward_speed
+        elif primitive in {"turn_left", "turn_right", "turn_around"}:
+            default_angle_deg = 180.0 if primitive == "turn_around" else 90.0
+            angle_deg = abs(float(params.get("angle_deg", default_angle_deg) or default_angle_deg))
+            vyaw = turn_speed if primitive == "turn_left" else -turn_speed
+            if primitive == "turn_around":
+                vyaw = turn_speed
+            duration_s = float(duration_s) if duration_s is not None else math.radians(angle_deg) / turn_speed
+        else:
+            raise ValueError(f"unsupported primitive '{primitive}'")
+
+        duration_s = max(dt_s, float(duration_s or dt_s))
+        remaining = duration_s
+        while remaining > 1e-6:
+            step_s = min(dt_s, remaining)
+            move(vx, vy, vyaw, duration_s=step_s)
+            time.sleep(step_s)
+            remaining -= step_s
+        stop()
+
+        self._last_status = {
+            "phase": "success",
+            "message": f"primitive motion '{primitive}' completed",
+            "primitive": primitive,
+            "duration_s": round(duration_s, 4),
+            "command": {
+                "vx": round(vx, 4),
+                "vy": round(vy, 4),
+                "vyaw": round(vyaw, 4),
+                "speed_scale": speed_scale,
+            },
+        }
         return self._last_status
 
     def snapshot_runtime(self, robot_id: str, current_state: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -170,7 +260,14 @@ class TargetNavigationBackend:
             "active_horizon_target": status.get("active_horizon_target"),
             "history_tail": status.get("history_tail"),
         }
-        return {robot_id: state}
+        payload: dict[str, Any] = {"robots": {robot_id: state}}
+        scene_graph = self._scene_graph_from_observation(latest_observation)
+        if scene_graph is not None:
+            payload["scene_graph"] = scene_graph
+        objects = self._objects_from_observation(latest_observation)
+        if objects is not None:
+            payload["objects"] = objects
+        return payload
 
     def _sdk_api(self) -> dict[str, Any]:
         if self._sdk is None:
@@ -207,6 +304,24 @@ class TargetNavigationBackend:
             "remote_motion_sdk_python_path",
             "remote_motion_network_interface",
             "remote_motion_require_subscriber",
+            "unitree_sdk_path",
+            "network_interface",
+            "enable_live_camera",
+            "enable_motion_control",
+            "stand_up_on_connect",
+            "synthetic_depth_m",
+            "command_dt_s",
+            "mujoco_root",
+            "mujoco_scene_path",
+            "mujoco_enable_viewer",
+            "mujoco_render_width",
+            "mujoco_render_height",
+            "mujoco_camera_fov_deg",
+            "mujoco_max_depth_m",
+            "mujoco_target_label",
+            "mujoco_target_position_xyz",
+            "mujoco_target_radius_m",
+            "mujoco_target_rgb",
             "remote_sync_before_start",
             "remote_sync_paths",
             "remote_sync_excludes",
@@ -240,6 +355,63 @@ class TargetNavigationBackend:
             return get_observation()
         except Exception:
             return None
+
+    def _scene_graph_from_observation(self, observation: Any) -> dict[str, Any] | None:
+        if observation is None:
+            return None
+        metadata = getattr(observation, "metadata", {}) or {}
+        target_label = str(metadata.get("target_label") or "").strip()
+        if not target_label:
+            return None
+        target_xyz = metadata.get("target_position_xyz")
+        if not isinstance(target_xyz, (list, tuple)) or len(target_xyz) != 3:
+            return None
+        radius_m = float(metadata.get("target_radius_m") or 0.12)
+        return {
+            "nodes": [
+                {
+                    "id": f"sim_{target_label}",
+                    "class": target_label,
+                    "object_key": target_label,
+                    "center": {
+                        "x": float(target_xyz[0]),
+                        "y": float(target_xyz[1]),
+                        "z": float(target_xyz[2]),
+                    },
+                    "size": {
+                        "x": radius_m * 2.0,
+                        "y": radius_m * 2.0,
+                        "z": radius_m * 2.0,
+                    },
+                    "confidence": 1.0,
+                    "frame": "map",
+                    "track_id": f"sim_track_{target_label}",
+                    "last_seen_at": self._timestamp(),
+                }
+            ],
+            "edges": [],
+        }
+
+    def _objects_from_observation(self, observation: Any) -> dict[str, Any] | None:
+        if observation is None:
+            return None
+        metadata = getattr(observation, "metadata", {}) or {}
+        target_label = str(metadata.get("target_label") or "").strip()
+        if not target_label:
+            return None
+        target_xyz = metadata.get("target_position_xyz")
+        if not isinstance(target_xyz, (list, tuple)) or len(target_xyz) != 3:
+            return None
+        return {
+            target_label: {
+                "position": {
+                    "x": float(target_xyz[0]),
+                    "y": float(target_xyz[1]),
+                    "z": float(target_xyz[2]),
+                },
+                "location": "unitree_mujoco",
+            }
+        }
 
     @staticmethod
     def _phase_to_status(phase: str | None) -> str:

@@ -1,0 +1,12 @@
+# Main PhyAgentOS environment
+# Recommended conda base:
+#   conda create -n phyagentos python=3.11 -y
+#
+# Install with:
+#   conda activate phyagentos
+#   pip install -r requirements-phyagentos.txt
+
+-e .[dev]
+watchdog==6.0.0
+pybullet==3.2.7
+numpy==2.4.4

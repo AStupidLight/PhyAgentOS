@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import sys
 from typing import Any
 
+_DATACLASS_KW = {"slots": True} if sys.version_info >= (3, 10) else {}
 
-@dataclass(slots=True)
+@dataclass(**_DATACLASS_KW)
 class RobotPose:
     frame: str
     x: float
@@ -17,7 +19,7 @@ class RobotPose:
     covariance: list[float] | None = None
 
 
-@dataclass(slots=True)
+@dataclass(**_DATACLASS_KW)
 class NavGoal:
     frame: str
     x: float
@@ -27,7 +29,7 @@ class NavGoal:
     target_ref: dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass(slots=True)
+@dataclass(**_DATACLASS_KW)
 class SemanticDetection:
     track_id: str
     label: str
@@ -36,7 +38,7 @@ class SemanticDetection:
     bbox_2d: dict[str, float] | None = None
 
 
-@dataclass(slots=True)
+@dataclass(**_DATACLASS_KW)
 class SceneNode:
     node_id: str
     label: str

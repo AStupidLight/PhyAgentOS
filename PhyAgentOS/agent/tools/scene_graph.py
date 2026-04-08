@@ -23,7 +23,11 @@ class SceneGraphQueryTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Query the structured scene graph and robot navigation state."
+        return (
+            "Query the live structured scene graph and robot navigation state from the current "
+            "workspace ENVIRONMENT.md. Use this for questions like what the robot can see, "
+            "what objects are present, where a target is, and what is nearest to the robot."
+        )
 
     @property
     def parameters(self) -> dict[str, Any]:

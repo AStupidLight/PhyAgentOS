@@ -29,7 +29,14 @@ class SAMWorkerSpec:
 
 
 def _navigation_sdk_root() -> Path:
-    return Path(__file__).resolve().parents[3] / "navigation_sdk"
+    candidates = [
+        Path(__file__).resolve().parents[2] / "navigation_sdk",
+        Path(__file__).resolve().parents[3] / "navigation_sdk",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
 
 
 def _builtin_sam3_worker_spec(config: dict[str, Any] | None = None) -> SAMWorkerSpec:

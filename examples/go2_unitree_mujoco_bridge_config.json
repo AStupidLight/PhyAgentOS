@@ -1,0 +1,14 @@
+{
+  "target_navigation_backend": "mujoco",
+  "mujoco_root": "/home/raychen/桌面/phyAgentOS/unitree_mujoco",
+  "mujoco_enable_viewer": true,
+  "mujoco_render_width": 96,
+  "mujoco_render_height": 96,
+  "mujoco_camera_fov_deg": 70.0,
+  "mujoco_max_depth_m": 8.0,
+  "mujoco_target_label": "auto",
+  "mujoco_target_rgb": [220, 20, 20],
+  "forward_speed_x": 0.4,
+  "turn_speed_z": 0.6,
+  "command_dt_s": 0.5
+}

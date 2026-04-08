@@ -1,0 +1,26 @@
+# Go2 real-hardware / Unitree SDK environment
+# Recommended conda base:
+#   conda create -n phyagentos-go2-py39 python=3.9 -y
+#
+# This environment is intentionally separate from the main agent environment.
+# PhyAgentOS itself requires Python >= 3.11, but the verified Unitree SDK +
+# CycloneDDS stack on this machine is currently Python 3.9-based.
+#
+# Install with:
+#   conda activate phyagentos-go2-py39
+#   pip install -r requirements-go2-py39.txt
+#
+# The editable Unitree SDK path is relative to this repository root.
+
+cyclonedds==0.10.2
+mujoco==3.3.2
+pygame==2.6.1
+PyOpenGL==3.1.10
+glfw==2.9.0
+numpy==2.0.2
+opencv-python==4.12.0
+opencv-python-headless==4.12.0
+rich==14.3.3
+rich-click==1.9.7
+tomli==2.4.1
+-e ../unitree_sdk2_python

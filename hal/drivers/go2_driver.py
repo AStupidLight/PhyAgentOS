@@ -23,9 +23,11 @@ class Go2Driver(BaseDriver):
         self._gui = gui
         self._bridge = bridge or ROS2Bridge(enabled=False)
         self._objects: dict[str, dict] = {}
+        target_navigation_kwargs = dict(kwargs)
+        target_navigation_kwargs.setdefault("mujoco_enable_viewer", gui)
         self._target_navigation_backend = TargetNavigationBackend(
             backend_mode=kwargs.get("target_navigation_backend", "mock"),
-            **kwargs,
+            **target_navigation_kwargs,
         )
         self._connection_config = {
             "transport": kwargs.get("transport", "ssh"),
@@ -125,6 +127,8 @@ class Go2Driver(BaseDriver):
             return self._semantic_navigate(params)
         if action_type == "target_navigation":
             return self._target_navigation(params)
+        if action_type == "primitive_motion":
+            return self._primitive_motion(params)
         if action_type == "localize":
             return self._localize(params)
         if action_type == "stop":
@@ -259,6 +263,39 @@ class Go2Driver(BaseDriver):
         )
         return f"Localization success for {robot_id}."
 
+    def _primitive_motion(self, params: dict[str, Any]) -> str:
+        robot_id = params.get("robot_id", self.ROBOT_ID)
+        primitive = str(params.get("primitive", "")).strip()
+        if not primitive:
+            self._update_nav_state(
+                robot_id,
+                mode="idle",
+                status="failed",
+                last_error="primitive_required",
+            )
+            return "Primitive motion failed: primitive is required."
+
+        try:
+            result = self._target_navigation_backend.run_motion_primitive(params)
+        except Exception as exc:
+            self._refresh_target_navigation_runtime(robot_id)
+            self._update_nav_state(
+                robot_id,
+                mode="idle",
+                status="failed",
+                last_error="motion_execution_failed",
+            )
+            return f"Primitive motion failed for {primitive}: {exc}"
+
+        self._refresh_target_navigation_runtime(robot_id)
+        self._update_nav_state(
+            robot_id,
+            mode="idle",
+            status="idle",
+            last_error=None,
+        )
+        return result.get("message", f"Primitive motion '{primitive}' completed.")
+
     def _update_nav_state(
         self,
         robot_id: str,
@@ -333,7 +370,15 @@ class Go2Driver(BaseDriver):
             robot_id,
             current_state=self._robot_state(robot_id),
         )
-        self._runtime_state.setdefault("robots", {}).update(runtime)
+        robots = runtime.get("robots") if isinstance(runtime, dict) else None
+        if isinstance(robots, dict):
+            self._runtime_state.setdefault("robots", {}).update(robots)
+        scene_graph = runtime.get("scene_graph") if isinstance(runtime, dict) else None
+        if scene_graph is not None:
+            self._runtime_state["scene_graph"] = scene_graph
+        objects = runtime.get("objects") if isinstance(runtime, dict) else None
+        if isinstance(objects, dict):
+            self._objects = dict(objects)
 
     @staticmethod
     def _stamp() -> str:

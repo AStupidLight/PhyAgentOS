@@ -20,6 +20,7 @@ The Critic Agent reads this file to validate whether proposed actions are safe a
 |--------|-----------|-------------|
 | `semantic_navigate` | `robot_id, target_ref, goal_pose, approach_distance, timeout_s` | Navigate to a semantic target using scene graph lookup and Nav2-compatible goals |
 | `target_navigation` | `robot_id, target_label, detection_hint?, success_distance_m?, success_heading_deg?, control_mode?, timeout_s?` | Navigate toward a lower-level visual target label using the target navigation stack |
+| `primitive_motion` | `robot_id, primitive, distance_m?, angle_deg?, duration_s?, speed_scale?` | Execute a simple locomotion primitive such as `forward`, `backward`, `turn_left`, `turn_right`, or `turn_around` |
 | `localize` | `robot_id, mode, timeout_s` | Trigger relocalization workflow |
 | `stop` | `robot_id` | Stop the current navigation task |
 | `connect_robot` | `robot_id` | Establish the control connection to the robot |

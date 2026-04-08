@@ -1,0 +1,15 @@
+{
+  "target_navigation_backend": "real",
+  "unitree_sdk_path": "/home/raychen/桌面/phyAgentOS/unitree_sdk2_python",
+  "network_interface": "enp2s0",
+  "enable_live_camera": true,
+  "enable_motion_control": true,
+  "stand_up_on_connect": false,
+  "remote_data_video_backend": "front_camera",
+  "synthetic_depth_m": 2.5,
+  "forward_speed_x": 0.4,
+  "turn_speed_z": 0.6,
+  "command_dt_s": 0.5,
+  "motion_confirm_timeout_s": 3.0,
+  "remote_observation_wait_timeout_s": 3.0
+}
