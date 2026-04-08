@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
 
 from hal.drivers import load_driver
 from hal.hal_watchdog import _poll_once
@@ -39,6 +40,7 @@ def _write_fake_unitree_sdk(tmp_path: Path) -> Path:
     files = {
         "unitree_sdk2py/__init__.py": "",
         "unitree_sdk2py/core/__init__.py": "",
+        "unitree_sdk2py/rpc/__init__.py": "",
         "unitree_sdk2py/g1/__init__.py": "",
         "unitree_sdk2py/g1/loco/__init__.py": "",
         "unitree_sdk2py/core/channel.py": """
@@ -46,6 +48,9 @@ calls = []
 
 def ChannelFactoryInitialize(domain_id, interface):
     calls.append((domain_id, interface))
+""",
+        "unitree_sdk2py/rpc/internal.py": """
+RPC_OK = 0
 """,
         "unitree_sdk2py/g1/loco/g1_loco_client.py": """
 class LocoClient:
@@ -57,28 +62,21 @@ class LocoClient:
         self.calls.append(("SetTimeout", timeout))
     def Init(self):
         self.calls.append(("Init",))
-    def Move(self, vx, vy, vyaw, continuous_move=False):
-        self.calls.append(("Move", vx, vy, vyaw, continuous_move))
-    def StopMove(self):
-        self.calls.append(("StopMove",))
-    def Damp(self):
-        self.calls.append(("Damp",))
-    def Squat2StandUp(self):
-        self.calls.append(("Squat2StandUp",))
-    def StandUp2Squat(self):
-        self.calls.append(("StandUp2Squat",))
-    def Lie2StandUp(self):
-        self.calls.append(("Lie2StandUp",))
-    def LowStand(self):
-        self.calls.append(("LowStand",))
-    def HighStand(self):
-        self.calls.append(("HighStand",))
-    def ZeroTorque(self):
-        self.calls.append(("ZeroTorque",))
-    def WaveHand(self, turn_flag=False):
-        self.calls.append(("WaveHand", turn_flag))
-    def ShakeHand(self, stage=-1):
-        self.calls.append(("ShakeHand", stage))
+    def GetServerApiVersion(self):
+        self.calls.append(("GetServerApiVersion",))
+        return 0, "1.0.0.0"
+    def SetVelocity(self, vx, vy, vyaw, duration):
+        self.calls.append(("SetVelocity", vx, vy, vyaw, duration))
+        return 0
+    def SetFsmId(self, fsm_id):
+        self.calls.append(("SetFsmId", fsm_id))
+        return 0
+    def SetStandHeight(self, stand_height):
+        self.calls.append(("SetStandHeight", stand_height))
+        return 0
+    def SetTaskId(self, task_id):
+        self.calls.append(("SetTaskId", task_id))
+        return 0
 """,
     }
     for relative_path, content in files.items():
@@ -107,8 +105,8 @@ def test_g1_driver_primitive_motion_forward_calls_unitree_sdk(tmp_path: Path) ->
 
     assert "Moved forward" in result
     assert ("Init",) in calls
-    assert any(call[0] == "Move" and call[1] > 0.0 for call in calls)
-    assert ("StopMove",) in calls
+    assert ("GetServerApiVersion",) in calls
+    assert any(call[0] == "SetVelocity" and call[1] > 0.0 for call in calls)
 
 
 def test_g1_driver_stop_and_pose_update(tmp_path: Path) -> None:
@@ -139,7 +137,7 @@ def test_g1_driver_stop_and_pose_update(tmp_path: Path) -> None:
     yaw = updated["robots"]["g1_001"]["robot_pose"]["yaw"]
     assert stop_result == "Motion stopped."
     assert yaw < -1.0
-    assert calls.count(("StopMove",)) >= 2
+    assert calls.count(("SetVelocity", 0.0, 0.0, 0.0, 1.0)) >= 1
 
 
 def test_g1_driver_posture_actions_call_expected_sdk_methods(tmp_path: Path) -> None:
@@ -156,6 +154,48 @@ def test_g1_driver_posture_actions_call_expected_sdk_methods(tmp_path: Path) -> 
         driver.execute_action("shake_hand", {"robot_id": "g1_001", "stage": 1})
         calls = list(driver._loco_client.calls)
 
-    assert ("WaveHand", True) in calls
-    assert ("HighStand",) in calls
-    assert ("ShakeHand", 1) in calls
+    assert ("SetTaskId", 1) in calls
+    assert ("SetStandHeight", float((1 << 32) - 1)) in calls
+    assert ("SetTaskId", 3) in calls
+
+
+def test_g1_driver_surfaces_rpc_send_errors(tmp_path: Path) -> None:
+    sdk_root = _write_fake_unitree_sdk(tmp_path)
+    failing_client = sdk_root / "unitree_sdk2py" / "g1" / "loco" / "g1_loco_client.py"
+    failing_client.write_text(
+        """
+class LocoClient:
+    def __init__(self):
+        self.calls = []
+        self.timeout = None
+    def SetTimeout(self, timeout):
+        self.timeout = timeout
+        self.calls.append(("SetTimeout", timeout))
+    def Init(self):
+        self.calls.append(("Init",))
+    def GetServerApiVersion(self):
+        self.calls.append(("GetServerApiVersion",))
+        return 0, "1.0.0.0"
+    def SetTaskId(self, task_id):
+        self.calls.append(("SetTaskId", task_id))
+        return 3102
+    def SetVelocity(self, vx, vy, vyaw, duration):
+        self.calls.append(("SetVelocity", vx, vy, vyaw, duration))
+        return 0
+""".lstrip(),
+        encoding="utf-8",
+    )
+    for module_name in list(sys.modules):
+        if module_name == "unitree_sdk2py" or module_name.startswith("unitree_sdk2py."):
+            sys.modules.pop(module_name, None)
+
+    with load_driver(
+        "g1",
+        unitree_sdk_path=str(sdk_root),
+        network_interface="dummy0",
+        command_dt_s=0.05,
+    ) as driver:
+        driver.connect()
+        result = driver.execute_action("wave_hand", {"robot_id": "g1_001"})
+
+    assert result == "Action failed: SetTaskId failed with code 3102"

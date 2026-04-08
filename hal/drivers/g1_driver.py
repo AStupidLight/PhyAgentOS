@@ -24,6 +24,8 @@ class G1Driver(BaseDriver):
     """Minimal real-hardware G1 locomotion driver."""
 
     ROBOT_ID = "g1_001"
+    _G1_HIGH_STAND_VALUE = float((1 << 32) - 1)
+    _G1_LOW_STAND_VALUE = 0.0
 
     def __init__(self, gui: bool = False, **kwargs: Any):
         del gui
@@ -39,6 +41,8 @@ class G1Driver(BaseDriver):
 
         self._channel_factory_initialize = None
         self._loco_client = None
+        self._rpc_ok = 0
+        self._shake_hand_stage_state: int | bool = -1
         self._last_error: str | None = None
         self._runtime_state = {"robots": {self.ROBOT_ID: self._make_robot_state()}}
 
@@ -54,9 +58,9 @@ class G1Driver(BaseDriver):
         try:
             self._ensure_loco_client()
             if self._stand_up_on_connect:
-                self._safe_call("Damp")
+                self._sdk_damp()
                 time.sleep(0.5)
-                self._safe_call("Squat2StandUp")
+                self._sdk_squat_to_stand()
             conn.update(
                 {
                     "status": "connected",
@@ -91,7 +95,7 @@ class G1Driver(BaseDriver):
     def disconnect(self) -> None:
         if self._loco_client is not None:
             try:
-                self._safe_call("StopMove")
+                self._sdk_stop_move()
             except Exception:
                 pass
         self._loco_client = None
@@ -114,6 +118,16 @@ class G1Driver(BaseDriver):
         state = self._robot_state(self.ROBOT_ID)
         conn = dict(state["connection_state"])
         if self._loco_client is not None:
+            try:
+                self._safe_rpc("GetServerApiVersion")
+            except RuntimeError as exc:
+                self._last_error = str(exc)
+                self._loco_client = None
+                conn["status"] = "disconnected"
+                conn["last_heartbeat"] = self._stamp()
+                conn["last_error"] = self._last_error
+                state["connection_state"] = conn
+                return False
             conn["status"] = "connected"
             conn["last_heartbeat"] = self._stamp()
             conn["last_error"] = None
@@ -149,53 +163,56 @@ class G1Driver(BaseDriver):
             self._update_motion_state(status="failed", mode="idle", last_error="disconnected")
             return "Connection error: robot is not connected."
 
-        if action_type == "primitive_motion":
-            return self._primitive_motion(params)
-        if action_type == "stop":
-            self._safe_call("StopMove")
-            self._update_motion_state(status="stopped", mode="idle", last_error=None)
-            return "Motion stopped."
-        if action_type == "damp":
-            self._safe_call("Damp")
-            self._update_motion_state(status="idle", mode="damp", last_error=None)
-            return "G1 entered damp mode."
-        if action_type == "squat_to_stand":
-            self._safe_call("Damp")
-            time.sleep(0.5)
-            self._safe_call("Squat2StandUp")
-            self._update_motion_state(status="idle", mode="stand", last_error=None)
-            return "G1 stood up from squat."
-        if action_type == "stand_to_squat":
-            self._safe_call("StandUp2Squat")
-            self._update_motion_state(status="idle", mode="squat", last_error=None)
-            return "G1 moved from standing to squat."
-        if action_type == "lie_to_stand":
-            self._safe_call("Damp")
-            time.sleep(0.5)
-            self._safe_call("Lie2StandUp")
-            self._update_motion_state(status="idle", mode="stand", last_error=None)
-            return "G1 stood up from lying."
-        if action_type == "low_stand":
-            self._safe_call("LowStand")
-            self._update_motion_state(status="idle", mode="low_stand", last_error=None)
-            return "G1 switched to low stand."
-        if action_type == "high_stand":
-            self._safe_call("HighStand")
-            self._update_motion_state(status="idle", mode="high_stand", last_error=None)
-            return "G1 switched to high stand."
-        if action_type == "zero_torque":
-            self._safe_call("ZeroTorque")
-            self._update_motion_state(status="idle", mode="zero_torque", last_error=None)
-            return "G1 entered zero torque mode."
-        if action_type == "wave_hand":
-            self._safe_call("WaveHand", bool(params.get("turn_around", False)))
-            self._update_motion_state(status="idle", mode="wave_hand", last_error=None)
-            return "G1 waved hand."
-        if action_type == "shake_hand":
-            self._safe_call("ShakeHand", int(params.get("stage", -1)))
-            self._update_motion_state(status="idle", mode="shake_hand", last_error=None)
-            return "G1 shook hand."
-        return f"Unknown action: {action_type}"
+        try:
+            if action_type == "primitive_motion":
+                return self._primitive_motion(params)
+            if action_type == "stop":
+                self._sdk_stop_move()
+                self._update_motion_state(status="stopped", mode="idle", last_error=None)
+                return "Motion stopped."
+            if action_type == "damp":
+                self._sdk_damp()
+                self._update_motion_state(status="idle", mode="damp", last_error=None)
+                return "G1 entered damp mode."
+            if action_type == "squat_to_stand":
+                self._sdk_damp()
+                time.sleep(0.5)
+                self._sdk_squat_to_stand()
+                self._update_motion_state(status="idle", mode="stand", last_error=None)
+                return "G1 stood up from squat."
+            if action_type == "stand_to_squat":
+                self._sdk_stand_to_squat()
+                self._update_motion_state(status="idle", mode="squat", last_error=None)
+                return "G1 moved from standing to squat."
+            if action_type == "lie_to_stand":
+                self._sdk_damp()
+                time.sleep(0.5)
+                self._sdk_lie_to_stand()
+                self._update_motion_state(status="idle", mode="stand", last_error=None)
+                return "G1 stood up from lying."
+            if action_type == "low_stand":
+                self._sdk_low_stand()
+                self._update_motion_state(status="idle", mode="low_stand", last_error=None)
+                return "G1 switched to low stand."
+            if action_type == "high_stand":
+                self._sdk_high_stand()
+                self._update_motion_state(status="idle", mode="high_stand", last_error=None)
+                return "G1 switched to high stand."
+            if action_type == "zero_torque":
+                self._sdk_zero_torque()
+                self._update_motion_state(status="idle", mode="zero_torque", last_error=None)
+                return "G1 entered zero torque mode."
+            if action_type == "wave_hand":
+                self._sdk_wave_hand(bool(params.get("turn_around", False)))
+                self._update_motion_state(status="idle", mode="wave_hand", last_error=None)
+                return "G1 waved hand."
+            if action_type == "shake_hand":
+                self._sdk_shake_hand(int(params.get("stage", -1)))
+                self._update_motion_state(status="idle", mode="shake_hand", last_error=None)
+                return "G1 shook hand."
+            return f"Unknown action: {action_type}"
+        except RuntimeError as exc:
+            return f"Action failed: {exc}"
 
     def get_scene(self) -> dict[str, dict]:
         return dict(self._objects)
@@ -257,9 +274,8 @@ class G1Driver(BaseDriver):
             last_error=None,
         )
 
-        self._safe_call("Move", vx, vy, vyaw, True)
+        self._sdk_set_velocity(vx, vy, vyaw, command_duration_s)
         time.sleep(command_duration_s)
-        self._safe_call("StopMove")
         self._integrate_pose(vx=vx, vy=vy, vyaw=vyaw, duration_s=command_duration_s, yaw_before=yaw_before)
         self._update_motion_state(status="idle", mode="idle", last_error=None)
         return summary
@@ -301,6 +317,7 @@ class G1Driver(BaseDriver):
         try:
             from unitree_sdk2py.core.channel import ChannelFactoryInitialize
             from unitree_sdk2py.g1.loco.g1_loco_client import LocoClient
+            from unitree_sdk2py.rpc.internal import RPC_OK
         except Exception as exc:
             raise RuntimeError(f"failed to import unitree_sdk2py G1 client: {exc}") from exc
 
@@ -315,17 +332,71 @@ class G1Driver(BaseDriver):
         client.Init()
         self._channel_factory_initialize = ChannelFactoryInitialize
         self._loco_client = client
+        self._rpc_ok = RPC_OK
+        self._safe_rpc("GetServerApiVersion")
 
-    def _safe_call(self, method_name: str, *args: Any) -> Any:
+    def _safe_rpc(self, method_name: str, *args: Any) -> Any:
         if self._loco_client is None:
             raise RuntimeError("G1 loco client is not connected")
         method = getattr(self._loco_client, method_name)
         try:
-            return method(*args)
+            result = method(*args)
         except Exception as exc:
             self._last_error = f"{method_name} failed: {exc}"
             self._update_motion_state(status="failed", mode="idle", last_error=self._last_error)
             raise RuntimeError(self._last_error) from exc
+        if isinstance(result, tuple):
+            code = result[0]
+        else:
+            code = result
+        if code != self._rpc_ok:
+            self._last_error = f"{method_name} failed with code {code}"
+            self._update_motion_state(status="failed", mode="idle", last_error=self._last_error)
+            raise RuntimeError(self._last_error)
+        return result
+
+    def _sdk_set_velocity(self, vx: float, vy: float, vyaw: float, duration_s: float) -> None:
+        self._safe_rpc("SetVelocity", vx, vy, vyaw, duration_s)
+
+    def _sdk_stop_move(self) -> None:
+        self._sdk_set_velocity(0.0, 0.0, 0.0, 1.0)
+
+    def _sdk_damp(self) -> None:
+        self._safe_rpc("SetFsmId", 1)
+
+    def _sdk_squat_to_stand(self) -> None:
+        self._safe_rpc("SetFsmId", 706)
+
+    def _sdk_stand_to_squat(self) -> None:
+        # Mirror the current upstream G1 Python SDK wrapper.
+        self._safe_rpc("SetFsmId", 706)
+
+    def _sdk_lie_to_stand(self) -> None:
+        self._safe_rpc("SetFsmId", 702)
+
+    def _sdk_zero_torque(self) -> None:
+        self._safe_rpc("SetFsmId", 0)
+
+    def _sdk_low_stand(self) -> None:
+        self._safe_rpc("SetStandHeight", self._G1_LOW_STAND_VALUE)
+
+    def _sdk_high_stand(self) -> None:
+        self._safe_rpc("SetStandHeight", self._G1_HIGH_STAND_VALUE)
+
+    def _sdk_wave_hand(self, turn_around: bool) -> None:
+        self._safe_rpc("SetTaskId", 1 if turn_around else 0)
+
+    def _sdk_shake_hand(self, stage: int) -> None:
+        if stage == 0:
+            self._shake_hand_stage_state = False
+            task_id = 2
+        elif stage == 1:
+            self._shake_hand_stage_state = True
+            task_id = 3
+        else:
+            self._shake_hand_stage_state = not self._shake_hand_stage_state
+            task_id = 3 if self._shake_hand_stage_state else 2
+        self._safe_rpc("SetTaskId", task_id)
 
     def _robot_state(self, robot_id: str) -> dict[str, Any]:
         return self._runtime_state["robots"].setdefault(robot_id, self._make_robot_state())
