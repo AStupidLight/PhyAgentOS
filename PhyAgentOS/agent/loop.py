@@ -278,6 +278,67 @@ class AgentLoop:
 
         return "The current environment snapshot does not list any visible objects."
 
+    def _resolve_default_robot_id(self) -> str | None:
+        env = load_environment_doc(self.workspace / "ENVIRONMENT.md")
+        if not isinstance(env, dict):
+            return None
+        robots = env.get("robots") or {}
+        if not isinstance(robots, dict) or not robots:
+            return None
+        if len(robots) == 1:
+            return next(iter(robots))
+        if "g1_001" in robots:
+            return "g1_001"
+        return None
+
+    @staticmethod
+    def _parse_direct_embodied_action(text: str) -> tuple[str, dict[str, Any], str] | None:
+        normalized = " ".join(text.strip().lower().split())
+        exact_actions = {
+            "wave hand": ("wave_hand", {}, "Execute the built-in wave-hand motion requested by the user."),
+            "wave": ("wave_hand", {}, "Execute the built-in wave-hand motion requested by the user."),
+            "挥手": ("wave_hand", {}, "Execute the built-in wave-hand motion requested by the user."),
+            "shake hand": ("shake_hand", {}, "Execute the built-in handshake motion requested by the user."),
+            "握手": ("shake_hand", {}, "Execute the built-in handshake motion requested by the user."),
+            "high stand": ("high_stand", {}, "Switch the robot into the high-stand posture requested by the user."),
+            "高站姿": ("high_stand", {}, "Switch the robot into the high-stand posture requested by the user."),
+            "low stand": ("low_stand", {}, "Switch the robot into the low-stand posture requested by the user."),
+            "低站姿": ("low_stand", {}, "Switch the robot into the low-stand posture requested by the user."),
+            "damp": ("damp", {}, "Switch the robot into damp mode requested by the user."),
+            "zero torque": ("zero_torque", {}, "Release actuator torque as requested by the user."),
+            "stand up": ("squat_to_stand", {}, "Stand the robot up as requested by the user."),
+            "站起来": ("squat_to_stand", {}, "Stand the robot up as requested by the user."),
+            "squat down": ("stand_to_squat", {}, "Move the robot into squat posture as requested by the user."),
+            "蹲下": ("stand_to_squat", {}, "Move the robot into squat posture as requested by the user."),
+            "lie to stand": ("lie_to_stand", {}, "Stand the robot up from lying posture as requested by the user."),
+        }
+        if normalized in exact_actions:
+            return exact_actions[normalized]
+        if normalized in {"stop", "停止"}:
+            return ("stop", {}, "Stop the current robot motion immediately as requested by the user.")
+        return None
+
+    async def _maybe_handle_direct_embodied_action(self, text: str) -> str | None:
+        parsed = self._parse_direct_embodied_action(text)
+        if parsed is None:
+            return None
+
+        robot_id = self._resolve_default_robot_id()
+        if not robot_id:
+            return "Error: Could not infer which robot to control. Please specify the target robot."
+
+        action_type, extra_params, reasoning = parsed
+        action_tool = self.tools.get("execute_robot_action")
+        if not isinstance(action_tool, EmbodiedActionTool):
+            return None
+
+        parameters = {"robot_id": robot_id, **extra_params}
+        return await action_tool.execute(
+            action_type=action_type,
+            parameters=parameters,
+            reasoning=reasoning,
+        )
+
     async def _run_agent_loop(
         self,
         initial_messages: list[dict],
@@ -512,6 +573,14 @@ class AgentLoop:
                     content=direct_answer,
                     metadata=msg.metadata or {},
                 )
+        direct_action = await self._maybe_handle_direct_embodied_action(msg.content)
+        if direct_action is not None:
+            return OutboundMessage(
+                channel=msg.channel,
+                chat_id=msg.chat_id,
+                content=direct_action,
+                metadata=msg.metadata or {},
+            )
         await self.memory_consolidator.maybe_consolidate_by_tokens(session)
 
         self._set_tool_context(msg.channel, msg.chat_id, msg.metadata.get("message_id"))
