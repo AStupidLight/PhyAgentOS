@@ -295,8 +295,16 @@ class AgentLoop:
     def _parse_direct_embodied_action(text: str) -> tuple[str, dict[str, Any], str] | None:
         normalized = " ".join(text.strip().lower().split())
         exact_actions = {
+            "connect robot": ("connect_robot", {}, "Connect to the robot as requested by the user."),
+            "disconnect robot": ("disconnect_robot", {}, "Disconnect from the robot as requested by the user."),
+            "reconnect robot": ("reconnect_robot", {}, "Reconnect to the robot as requested by the user."),
+            "check connection": ("check_connection", {}, "Check the current robot connection state as requested by the user."),
             "wave hand": ("wave_hand", {}, "Execute the built-in wave-hand motion requested by the user."),
             "wave": ("wave_hand", {}, "Execute the built-in wave-hand motion requested by the user."),
+            "连接机器人": ("connect_robot", {}, "Connect to the robot as requested by the user."),
+            "断开机器人": ("disconnect_robot", {}, "Disconnect from the robot as requested by the user."),
+            "重新连接机器人": ("reconnect_robot", {}, "Reconnect to the robot as requested by the user."),
+            "检查连接": ("check_connection", {}, "Check the current robot connection state as requested by the user."),
             "挥手": ("wave_hand", {}, "Execute the built-in wave-hand motion requested by the user."),
             "shake hand": ("shake_hand", {}, "Execute the built-in handshake motion requested by the user."),
             "握手": ("shake_hand", {}, "Execute the built-in handshake motion requested by the user."),

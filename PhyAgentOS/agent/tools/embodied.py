@@ -26,6 +26,13 @@ _FENCE_CLOSE = "```"
 class EmbodiedActionTool(Tool):
     """Validate embodied actions and route them to the correct robot workspace."""
 
+    _NON_CRITIC_ACTIONS = {
+        "connect_robot",
+        "disconnect_robot",
+        "reconnect_robot",
+        "check_connection",
+    }
+
     @property
     def name(self) -> str:
         return "execute_robot_action"
@@ -92,6 +99,9 @@ class EmbodiedActionTool(Tool):
             lessons_file = self._resolve_lessons_file()
         except KeyError as exc:
             return f"Error: {exc}"
+
+        if action_type in self._NON_CRITIC_ACTIONS:
+            return self._accept_action(action_type, parameters, action_file)
 
         if not embodied_file.exists():
             return f"Error: {embodied_file.name} not found for the target robot. Cannot validate action."

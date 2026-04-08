@@ -58,3 +58,81 @@ def test_wave_hand_shortcut_dispatches_embodied_action(tmp_path: Path) -> None:
     assert '"action_type": "wave_hand"' in action_doc
     assert '"robot_id": "g1_001"' in action_doc
     assert provider.chat_with_retry.await_count == 1
+
+
+def test_connect_robot_shortcut_dispatches_without_critic(tmp_path: Path) -> None:
+    _write_workspace_files(tmp_path)
+    save_environment_doc(
+        tmp_path / "ENVIRONMENT.md",
+        {
+            "schema_version": "PhyAgentOS.environment.v1",
+            "robots": {
+                "g1_001": {
+                    "connection_state": {"status": "disconnected", "last_error": "GetServerApiVersion failed with code 3102"},
+                    "motion_state": {"status": "failed", "last_error": "GetServerApiVersion failed with code 3102"},
+                    "robot_pose": {"frame": "map", "x": 0.0, "y": 0.0, "z": 0.0, "yaw": 0.0},
+                }
+            },
+            "scene_graph": {"nodes": [], "edges": []},
+            "objects": {},
+        },
+    )
+
+    provider = MagicMock()
+    provider.get_default_model.return_value = "test-model"
+    provider.estimate_prompt_tokens.return_value = (0, "test-counter")
+    provider.chat_with_retry = AsyncMock(return_value=_FakeResponse("INVALID"))
+
+    loop = AgentLoop(
+        bus=MessageBus(),
+        provider=provider,
+        workspace=tmp_path,
+        model="test-model",
+    )
+
+    result = asyncio.run(loop.process_direct("connect robot", session_key="cli:test"))
+
+    assert "validated and dispatched" in result
+    action_doc = (tmp_path / "ACTION.md").read_text(encoding="utf-8")
+    assert '"action_type": "connect_robot"' in action_doc
+    assert '"robot_id": "g1_001"' in action_doc
+    assert provider.chat_with_retry.await_count == 0
+
+
+def test_check_connection_shortcut_dispatches_without_critic(tmp_path: Path) -> None:
+    _write_workspace_files(tmp_path)
+    save_environment_doc(
+        tmp_path / "ENVIRONMENT.md",
+        {
+            "schema_version": "PhyAgentOS.environment.v1",
+            "robots": {
+                "g1_001": {
+                    "connection_state": {"status": "disconnected", "last_error": "GetServerApiVersion failed with code 3102"},
+                    "motion_state": {"status": "failed", "last_error": "GetServerApiVersion failed with code 3102"},
+                    "robot_pose": {"frame": "map", "x": 0.0, "y": 0.0, "z": 0.0, "yaw": 0.0},
+                }
+            },
+            "scene_graph": {"nodes": [], "edges": []},
+            "objects": {},
+        },
+    )
+
+    provider = MagicMock()
+    provider.get_default_model.return_value = "test-model"
+    provider.estimate_prompt_tokens.return_value = (0, "test-counter")
+    provider.chat_with_retry = AsyncMock(return_value=_FakeResponse("INVALID"))
+
+    loop = AgentLoop(
+        bus=MessageBus(),
+        provider=provider,
+        workspace=tmp_path,
+        model="test-model",
+    )
+
+    result = asyncio.run(loop.process_direct("check connection", session_key="cli:test"))
+
+    assert "validated and dispatched" in result
+    action_doc = (tmp_path / "ACTION.md").read_text(encoding="utf-8")
+    assert '"action_type": "check_connection"' in action_doc
+    assert '"robot_id": "g1_001"' in action_doc
+    assert provider.chat_with_retry.await_count == 0
